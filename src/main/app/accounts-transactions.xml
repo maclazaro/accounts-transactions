@@ -47,6 +47,31 @@ payload]]></dw:set-variable>
 	transactions: payload[0].*transaction
 }]]></dw:set-payload>
         </dw:transform-message>
+        <dw:transform-message doc:name="Transform Message">
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/json
+
+%var directorIDs = ["JKLS483S","FJSA48JD","NMA4FJ9K"]
+
+//Combines Accounts and Transactions by the Account ID. Assigns each account to a
+//director
+%function consolidateAccountsTrans (payload)
+  payload.accounts map ( (account, index) ->
+  using (id = account.id as :string)
+  (
+    account ++
+    {
+      transactions: payload.transactions filter ($.customerRef == id)
+    } ++
+    {
+      assignedDirector: directorIDs[index mod sizeOf directorIDs]
+    }
+  )
+)
+---
+using (data = consolidateAccountsTrans(payload))
+(data groupBy $.assignedDirector)]]></dw:set-payload>
+        </dw:transform-message>
     </flow>
     <flow name="accountsFlow">
         <http:listener config-ref="Accounts_Transactions_HTTP_Listener_Configuration" path="/accounts" allowedMethods="GET" doc:name="/accounts"/>
