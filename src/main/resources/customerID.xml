@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<ns0:GetTransactionsforCustomers
+	xmlns:ns0="http://training.mulesoft.com/">
+	<customerID>4402</customerID>
+	<customerID>4404</customerID>
+	<customerID>4464</customerID>
+</ns0:GetTransactionsforCustomers>
