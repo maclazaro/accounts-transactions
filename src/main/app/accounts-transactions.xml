@@ -16,10 +16,11 @@ http://www.mulesoft.org/schema/mule/xml http://www.mulesoft.org/schema/mule/xml/
     </http:request-config>
     <http:listener-config name="Accounts_Transactions_HTTP_Listener_Configuration" host="0.0.0.0" port="8081" basePath="/accounts-transactions" doc:name="HTTP Listener Configuration"/>
     <ws:consumer-config name="Transactions_Web_Service_Consumer" wsdlLocation="http://apdev-accounts-ws.cloudhub.io/api/transactions?wsdl" service="TransactionServiceService" port="TransactionServicePort" serviceAddress="http://apdev-accounts-ws.cloudhub.io/api/transactions" doc:name="Web Service Consumer"/>
+    <http:request-config name="APDev_Accounts_HTTP_Request_Configuration" host="apdev-accounts-ws.cloudhub.io" port="80" basePath="/api" usePersistentConnections="false" responseTimeout="60000" doc:name="HTTP Request Configuration"/>
     <flow name="accounts-transactionsFlow">
-        <http:listener config-ref="Accounts_Transactions_HTTP_Listener_Configuration" path="/" allowedMethods="GET" doc:name="HTTP"/>
-        <flow-ref name="accountsSub_Flow" doc:name="accountsSub_Flow"/>
-        <dw:transform-message doc:name="Transform Message" metadata:id="aef8d2cc-8f52-4525-bfce-96579e468810">
+        <http:listener config-ref="Accounts_Transactions_HTTP_Listener_Configuration" path="/" allowedMethods="POST" doc:name="POST /accounts-transactions"/>
+        <flow-ref name="accountsSub_Flow" doc:name="accountsSub_ Flow"/>
+        <dw:transform-message doc:name="Create XML request" metadata:id="aef8d2cc-8f52-4525-bfce-96579e468810">
             <dw:input-payload doc:sample="sample_data\list_json_15.json"/>
             <dw:set-payload><![CDATA[%dw 1.0
 %output application/xml
@@ -37,8 +38,8 @@ http://www.mulesoft.org/schema/mule/xml http://www.mulesoft.org/schema/mule/xml/
 ---
 payload]]></dw:set-variable>
         </dw:transform-message>
-        <flow-ref name="transactionsSub_Flow" doc:name="transactionsSub_Flow"/>
-        <dw:transform-message doc:name="Transform Message">
+        <flow-ref name="transactionsSub_Flow" doc:name="transactionsSub_ Flow"/>
+        <dw:transform-message doc:name="Combine accounts and transactions">
             <dw:set-payload><![CDATA[%dw 1.0
 %output application/json
 ---
@@ -47,14 +48,13 @@ payload]]></dw:set-variable>
 	transactions: payload[0].*transaction
 }]]></dw:set-payload>
         </dw:transform-message>
-        <dw:transform-message doc:name="Transform Message">
+        <dw:transform-message doc:name="Consolidate accounts' transactions">
             <dw:set-payload><![CDATA[%dw 1.0
 %output application/json
 
 %var directorIDs = ["JKLS483S","FJSA48JD","NMA4FJ9K"]
 
-//Combines Accounts and Transactions by the Account ID. Assigns each account to a
-//director
+//Combines Accounts and Transactions by the Account ID. Assigns each account to a director
 %function consolidateAccountsTrans (payload)
   payload.accounts map ( (account, index) ->
   using (id = account.id as :string)
@@ -72,14 +72,27 @@ payload]]></dw:set-variable>
 using (data = consolidateAccountsTrans(payload))
 (data groupBy $.assignedDirector)]]></dw:set-payload>
         </dw:transform-message>
+        <flow-ref name="accounts_transactionsSub_Flow" doc:name="accounts_transactionsSub_Flow"/>
+        <dw:transform-message doc:name="Count processed records">
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/json
+---
+accounts: {
+	processed: sizeOf flowVars.accounts
+}]]></dw:set-payload>
+        </dw:transform-message>
+        <logger level="INFO" doc:name="Logger"/>
     </flow>
-    <flow name="accountsFlow">
-        <http:listener config-ref="Accounts_Transactions_HTTP_Listener_Configuration" path="/accounts" allowedMethods="GET" doc:name="/accounts"/>
-        <flow-ref name="accountsSub_Flow" doc:name="accountsSub_Flow"/>
+    <flow name="postAccountsFlow">
+        <http:listener config-ref="Accounts_Transactions_HTTP_Listener_Configuration" path="/accounts" allowedMethods="POST" doc:name="POST /accounts"/>
+        <flow-ref name="accounts_transactionsSub_Flow" doc:name="accounts_transactionsSub_ Flow"/>
+        <logger message="#[message.payloadAs(java.lang.String)]" level="INFO" doc:name="Logger"/>
+        <logger level="INFO" doc:name="Logger"/>
     </flow>
     <flow name="transactionsFlow">
         <http:listener config-ref="Accounts_Transactions_HTTP_Listener_Configuration" path="/transactions" allowedMethods="GET" doc:name="/transactions"/>
-        <flow-ref name="transactionsSub_Flow" doc:name="transactionsSub_Flow"/>
+        <flow-ref name="transactionsSub_Flow" doc:name="transactionsSub_ Flow"/>
+        <logger level="INFO" doc:name="Logger"/>
     </flow>
     <sub-flow name="accountsSub_Flow">
         <http:request config-ref="Accounts_HTTP_Request_Configuration" path="/accounts" method="GET" doc:name="/accounts" metadata:id="799e5a41-1410-4295-a0c3-d29af34231d3">
@@ -90,6 +103,9 @@ using (data = consolidateAccountsTrans(payload))
                 <http:header headerName="Requester-ID" value="asdf"/>
             </http:request-builder>
         </http:request>
+    </sub-flow>
+    <sub-flow name="accounts_transactionsSub_Flow">
+        <http:request config-ref="APDev_Accounts_HTTP_Request_Configuration" path="/accounts_transactions" method="POST" doc:name="/accounts_ transactions"/>
     </sub-flow>
     <sub-flow name="transactionsSub_Flow">
         <ws:consumer config-ref="Transactions_Web_Service_Consumer" operation="GetTransactionsforCustomers" doc:name="GetAllTransactions"/>
